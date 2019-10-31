@@ -17,6 +17,16 @@ struct Value<T: Clone> {
     latest: Moment,
 }
 
+impl<T: Clone> Value<T> {
+    fn latest(self, other: Self) -> Self {
+        if other.latest > self.latest {
+            other
+        } else {
+            self
+        }
+    }
+}
+
 enum Cache<T: Send + Debug + Clone + 'static> {
     Cache(Option<Op<T>>),
     Handle(Handle<Register<T>>),
@@ -139,11 +149,7 @@ impl<T: Debug + Clone + Send + 'static> Replicative for Register<T> {
         let self_elements = replace(&mut self.state.content, BTreeMap::new());
         for (actor, value) in self_elements {
             if let Some(other_value) = state.content.remove(&actor) {
-                let v = if value.latest > other_value.latest {
-                    value
-                } else {
-                    other_value
-                };
+                let v = value.latest(other_value);
                 self.state.clock.insert(Shard(actor, v.latest));
                 self.state.content.insert(actor, v);
             } else if !state.clock.contains(&Shard(actor, value.latest)) {
