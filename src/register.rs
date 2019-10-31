@@ -135,7 +135,29 @@ impl<T: Debug + Clone + Send + 'static> Replicative for Register<T> {
             }
         }
     }
-    fn merge(&mut self, state: Self::State) {}
+    fn merge(&mut self, mut state: Self::State) {
+        let self_elements = replace(&mut self.state.content, BTreeMap::new());
+        for (actor, value) in self_elements {
+            if let Some(other_value) = state.content.remove(&actor) {
+                let v = if value.latest > other_value.latest {
+                    value
+                } else {
+                    other_value
+                };
+                self.state.clock.insert(Shard(actor, v.latest));
+                self.state.content.insert(actor, v);
+            } else if !state.clock.contains(&Shard(actor, value.latest)) {
+                self.state.clock.insert(Shard(actor, value.latest));
+                self.state.content.insert(actor, value);
+            }
+        }
+        for (actor, v) in state.content {
+            if !self.state.clock.contains(&Shard(actor, v.latest)) {
+                self.state.clock.insert(Shard(actor, v.latest));
+                self.state.content.insert(actor, v);
+            }
+        }
+    }
     fn fetch<'a>(&'a self) -> Cow<'a, Self::State> {
         Cow::Borrowed(&self.state)
     }
