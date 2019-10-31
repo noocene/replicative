@@ -76,10 +76,12 @@ where
             handle: Sequence::new(),
         }
     }
-    pub fn insert(&mut self, item: <T as Set>::Item) {
-        if self.data.insert(item.clone()) {
+    pub fn insert(&mut self, item: <T as Set>::Item) -> bool {
+        let item_is_new = self.data.insert(item.clone());
+        if item_is_new {
             self.handle.dispatch(item)
         }
+        item_is_new
     }
 }
 
