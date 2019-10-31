@@ -1,20 +1,20 @@
-use replicative::{register::Register, Replicant};
+use replicative::*;
+use std::collections::HashSet;
 
-use futures::{executor::ThreadPool, StreamExt, SinkExt};
+use futures::{executor::block_on, StreamExt};
 
 fn main() {
-    let mut register = Register::new("test");
-    let mut register2 = Register::new("test");
-    register.set("hello");
+    let mut set = Grow::<HashSet<_>>::new();
+    set.insert(Leaf::new("one".to_string()));
+    let mut set_two = Grow::<HashSet<_>>::new();
+    set_two.insert(Leaf::new("two".to_string()));
 
-    let mut replicant = Replicant::new(&mut register, 1);
-    let mut replicant2 = Replicant::new(&mut register2, 2);
-    ThreadPool::new().unwrap().spawn_ok(async move {
-        while let Some(action) = replicant.next().await {
-            println!("{:?}", action);
-            replicant2.send(action).await.unwrap();
-
+    block_on(async {
+        while let Some(op) = set.next().await {
+            set_two.apply(op);
         }
     });
-    register.set("gamer");
+
+    println!("{:?}", set);
+    println!("{:?}", set_two);
 }
