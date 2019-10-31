@@ -14,7 +14,7 @@ use std::{
 };
 
 use crate::{
-    cache::{Cache, Single},
+    cache::{Cache, Sequence},
     clock::Actor,
     Handle, Replicative,
 };
@@ -73,13 +73,13 @@ type Data<T> = BTreeMap<Actor, T>;
 
 pub struct GrowOnly<T: Unpin + Incrementable + Clone> {
     data: Data<T>,
-    handle: Single<Self>,
+    handle: Sequence<Self>,
     this: Actor,
 }
 
 impl<T: Incrementable + Clone + Unpin> GrowOnly<T> {
     pub fn new<I: Into<T>>(item: I) -> Self {
-        let handle = Single::new();
+        let handle = Sequence::new();
         let mut data = BTreeMap::new();
         data.insert(Actor::invalid(), item.into());
         GrowOnly {
@@ -87,6 +87,15 @@ impl<T: Incrementable + Clone + Unpin> GrowOnly<T> {
             data,
             this: Actor::invalid(),
         }
+    }
+    pub fn get(&self) -> T {
+        let mut initial = self.data.get(&self.this).unwrap().clone();
+        for (actor, counter) in &self.data {
+            if actor != &self.this {
+                initial.increment(counter.clone()).unwrap();
+            }
+        }
+        initial
     }
     fn increment_origin<I: Into<T>>(&mut self, origin: Actor, by: I) -> Result<(), IncrementError> {
         if let Some(count) = self.data.get_mut(&origin) {
@@ -116,13 +125,16 @@ impl<T: Incrementable + Clone + Unpin> Replicative for GrowOnly<T> {
         self.increment_origin(origin, op)
     }
     fn prepare<H: Handle<Self> + 'static>(&mut self, handle: H) {
+        if let Some(item) = self.data.remove(&Actor::invalid()) {
+            self.data.insert(handle.this().actor(), item);
+        }
         self.handle.prepare(handle)
     }
     fn new(state: Self::State) -> Result<Self, Self::MergeError> {
         Ok(GrowOnly {
             this: Actor::invalid(),
             data: state,
-            handle: Single::new(),
+            handle: Sequence::new(),
         })
     }
     fn merge(&mut self, state: Self::State) -> Result<(), Self::MergeError> {
