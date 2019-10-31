@@ -2,12 +2,7 @@ use crate::{
     clock::{Actor, Clock, Moment, Shard},
     Handle, Replicative,
 };
-use std::{
-    collections::BTreeMap,
-    fmt::Debug,
-    mem::replace,
-    sync::{Arc, Mutex},
-};
+use std::{borrow::Cow, collections::BTreeMap, fmt::Debug, mem::replace};
 
 #[derive(Debug)]
 pub struct Op<T: Clone> {
@@ -50,16 +45,16 @@ impl<T: Debug + Clone + Send + 'static> Cache<T> {
     }
 }
 
-struct RegisterState<T: Send + Debug + Clone + 'static> {
-    content: BTreeMap<Actor, Value<T>>,
-    clock: Clock,
+pub struct Register<T: Send + Debug + Clone + 'static> {
+    state: State<T>,
     local: Actor,
     handle: Cache<T>,
 }
 
 #[derive(Clone)]
-pub struct Register<T: Send + Debug + Clone + 'static> {
-    state: Arc<Mutex<RegisterState<T>>>,
+pub struct State<T: Clone> {
+    content: BTreeMap<Actor, Value<T>>,
+    clock: Clock,
 }
 
 impl<T: Clone + Debug + Send> Register<T> {
@@ -71,49 +66,37 @@ impl<T: Clone + Debug + Send> Register<T> {
         content.insert(local, Value { data, latest });
         clock.insert(Shard(local, latest));
         Register {
-            state: Arc::new(Mutex::new(RegisterState {
-                content,
-                clock,
-                local,
-                handle: Cache::new(),
-            })),
+            state: State { content, clock },
+            local,
+            handle: Cache::new(),
         }
     }
     pub fn get(&self) -> T {
-        self.state
-            .lock()
-            .unwrap()
-            .content
-            .values()
-            .next()
-            .unwrap()
-            .data
-            .clone()
+        self.state.content.values().next().unwrap().data.clone()
     }
     pub fn set(&mut self, data: T) {
-        let mut state = self.state.lock().unwrap();
-        let local = state.local;
-        let latest = state.clock.increment(local);
+        let local = self.local;
+        let latest = self.state.clock.increment(local);
         let mut new_content = BTreeMap::new();
         new_content.insert(
-            state.local,
+            self.local,
             Value {
                 data: data.clone(),
                 latest,
             },
         );
-        let removed = replace(&mut state.content, new_content)
+        let removed = replace(&mut self.state.content, new_content)
             .into_iter()
             .filter_map(|(actor, value)| {
-                if actor == state.local {
+                if actor == self.local {
                     None
                 } else {
                     Some(Shard(actor, value.latest))
                 }
             })
             .collect();
-        let local = state.local;
-        state.handle.dispatch(Op {
+        let local = self.local;
+        self.handle.dispatch(Op {
             shard: Shard(local, latest),
             data,
             removed,
@@ -123,34 +106,37 @@ impl<T: Clone + Debug + Send> Register<T> {
 
 impl<T: Debug + Clone + Send + 'static> Replicative for Register<T> {
     type Op = Op<T>;
+    type State = State<T>;
 
     fn prepare(&mut self, this: Actor, handle: Handle<Self>) {
-        let mut state = self.state.lock().unwrap();
-        state.local = this;
-        state.clock.prepare(this);
-        if let Some(value) = state.content.remove(&Actor::invalid()) {
-            state.content.insert(this, value);
+        self.local = this;
+        self.state.clock.prepare(this);
+        if let Some(value) = self.state.content.remove(&Actor::invalid()) {
+            self.state.content.insert(this, value);
         }
-        state.handle.prepare(handle, this);
+        self.handle.prepare(handle, this);
     }
     fn apply(&mut self, op: Self::Op) {
-        let mut state = self.state.lock().unwrap();
         for Shard(actor, latest) in op.removed {
-            if let Some(value) = state.content.remove(&actor) {
+            if let Some(value) = self.state.content.remove(&actor) {
                 if value.latest > latest {
-                    state.content.insert(actor, value);
+                    self.state.content.insert(actor, value);
                 }
             }
         }
-        state.clock.insert(op.shard.clone());
+        self.state.clock.insert(op.shard.clone());
         let data = Value {
             data: op.data,
             latest: op.shard.moment(),
         };
-        if let Some(existing) = state.content.insert(op.shard.actor(), data) {
+        if let Some(existing) = self.state.content.insert(op.shard.actor(), data) {
             if existing.latest > op.shard.moment() {
-                state.content.insert(op.shard.actor(), existing);
+                self.state.content.insert(op.shard.actor(), existing);
             }
         }
+    }
+    fn merge(&mut self, state: Self::State) {}
+    fn fetch<'a>(&'a self) -> Cow<'a, Self::State> {
+        Cow::Borrowed(&self.state)
     }
 }

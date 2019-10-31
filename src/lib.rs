@@ -7,6 +7,7 @@ use std::{
     marker::PhantomData,
     pin::Pin,
     collections::HashMap,
+    borrow::Cow,
     task::{Context, Poll},
 };
 
@@ -57,25 +58,11 @@ pub struct Action {
 impl<R: Replicative + Send + 'static> Replicant<R> {
     pub fn new(data: &'_ mut R, actor: u32) -> Self {
         let (sender, receiver) = unbounded();
-        let (isender, mut ireceiver): (_, UnboundedReceiver<Action>) = unbounded();
-        let mut r = data.clone();
-        ThreadPool::new().unwrap().spawn_ok(async move {
-            while let Some(item) = ireceiver.next().await {
-                r.apply(*item.data.downcast().unwrap());
-            }
-        });
         let this = Actor::new(actor);
-        let mut in_actions = HashMap::new();
         let reference = Reference::new(this);
+        let (isender, ireceiver): (_, UnboundedReceiver<Action>) = unbounded();
+        let mut in_actions = HashMap::new();
         in_actions.insert(reference.clone(), Box::pin(isender));
-        data.prepare(
-            this,
-            Handle {
-                data: PhantomData,
-                actions: sender.clone(),
-                reference: reference.clone(),
-            },
-        );
         Replicant {
             data: PhantomData,
             out_actions: (Box::pin(receiver), sender),
@@ -174,9 +161,14 @@ impl<R: Send + ?Sized + Replicative> Handle<R> {
     }
 }
 
-pub trait Replicative: Clone {
+pub trait InnerHandle {}
+
+pub trait Replicative {
     type Op: Any;
+    type State: Any + Clone;
 
     fn prepare(&mut self, this: Actor, handle: Handle<Self>);
     fn apply(&mut self, op: Self::Op);
+    fn merge(&mut self, state: Self::State);
+    fn fetch<'a>(&'a self) -> Cow<'a, Self::State>;
 }
