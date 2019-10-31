@@ -16,7 +16,7 @@ struct Value<T: Clone> {
     latest: Moment,
 }
 
-pub enum Cache<T: Send + Debug + Clone + 'static> {
+enum Cache<T: Send + Debug + Clone + 'static> {
     Cache(Option<Op<T>>),
     Handle(Handle<Register<T>>),
 }
