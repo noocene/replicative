@@ -172,7 +172,7 @@ impl<R: Send + ?Sized + Replicative> Handle<R> {
     }
 }
 
-pub trait Replicative {
+pub trait Replicative: Clone {
     type Op: Any;
 
     fn prepare(&mut self, this: Actor, handle: Handle<Self>);
