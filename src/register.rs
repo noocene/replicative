@@ -16,12 +16,12 @@ struct Value<T: Clone> {
     latest: Moment,
 }
 
-pub enum Cache<T: Debug + Clone + 'static> {
+pub enum Cache<T: Send + Debug + Clone + 'static> {
     Cache(Option<Op<T>>),
     Handle(Handle<Register<T>>),
 }
 
-impl<T: Debug + Clone + 'static> Cache<T> {
+impl<T: Debug + Clone + Send + 'static> Cache<T> {
     fn new() -> Self {
         Cache::Cache(None)
     }
@@ -44,14 +44,14 @@ impl<T: Debug + Clone + 'static> Cache<T> {
     }
 }
 
-pub struct Register<T: Debug + Clone + 'static> {
+pub struct Register<T: Send + Debug + Clone + 'static> {
     content: BTreeMap<Actor, Value<T>>,
     clock: Clock,
     local: Actor,
     handle: Cache<T>,
 }
 
-impl<T: Clone + Debug> Register<T> {
+impl<T: Clone + Debug + Send> Register<T> {
     pub fn new(data: T) -> Self {
         let local = Actor::invalid();
         let latest = Moment::new();
@@ -97,7 +97,7 @@ impl<T: Clone + Debug> Register<T> {
     }
 }
 
-impl<T: Debug + Clone + 'static> Replicative for Register<T> {
+impl<T: Debug + Clone + Send + 'static> Replicative for Register<T> {
     type Op = Op<T>;
 
     fn prepare(&mut self, this: Actor, handle: Handle<Self>) {
