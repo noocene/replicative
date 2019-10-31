@@ -1,17 +1,8 @@
-use failure::Fail;
 use futures::{
     task::{Context, Poll},
     Stream,
 };
-use std::{
-    collections::BTreeMap,
-    fmt::{self, Display, Formatter},
-    num::{
-        NonZeroI128, NonZeroI16, NonZeroI32, NonZeroI64, NonZeroI8, NonZeroU128, NonZeroU16,
-        NonZeroU32, NonZeroU64, NonZeroU8,
-    },
-    pin::Pin,
-};
+use std::{collections::BTreeMap, pin::Pin};
 
 use crate::{
     cache::{Cache, Sequence},
@@ -19,55 +10,7 @@ use crate::{
     Handle, Replicative,
 };
 
-#[derive(Fail, Debug)]
-pub struct IncrementError;
-
-impl Display for IncrementError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "cannot decrement grow-only counter")
-    }
-}
-
-pub trait Incrementable: Sized {
-    fn increment<I: Into<Self>>(&mut self, by: I) -> Result<(), IncrementError>;
-}
-
-macro_rules! impl_primitives {
-    ($($ty:ident)+) => {$(
-        impl Incrementable for $ty {
-            #[allow(unused_comparisons)]
-            fn increment<I: Into<Self>>(&mut self, by: I) -> Result<(), IncrementError> {
-                let by = by.into();
-                if by < 0 {
-                    Err(IncrementError)
-                } else {
-                    *self += by;
-                    Ok(())
-                }
-            }
-        }
-    )+};
-}
-
-impl_primitives!(u8 u16 u32 u64 u128 i8 i16 i32 i64 i128);
-
-macro_rules! impl_nonzero {
-    ($($ty:ident)+) => {$(
-        impl Incrementable for $ty {
-            #[allow(unused_comparisons)]
-            fn increment<I: Into<Self>>(&mut self, by: I) ->  Result<(), IncrementError>  {
-                let operand = by.into().get();
-                if operand < 0 {
-                    Err(IncrementError)
-                } else {
-                    Ok(*self = $ty::new(self.get() + operand).unwrap())
-                }
-            }
-        }
-    )+};
-}
-
-impl_nonzero!(NonZeroU8 NonZeroU16 NonZeroU32 NonZeroU64 NonZeroU128 NonZeroI8 NonZeroI16 NonZeroI32 NonZeroI64 NonZeroI128);
+use super::{IncrementError, Incrementable};
 
 type Data<T> = BTreeMap<Actor, T>;
 
@@ -97,7 +40,11 @@ impl<T: Incrementable + Clone + Unpin> GrowOnly<T> {
         }
         initial
     }
-    fn increment_origin<I: Into<T>>(&mut self, origin: Actor, by: I) -> Result<(), IncrementError> {
+    pub(crate) fn increment_origin<I: Into<T>>(
+        &mut self,
+        origin: Actor,
+        by: I,
+    ) -> Result<(), IncrementError> {
         if let Some(count) = self.data.get_mut(&origin) {
             count.increment(by.into())?;
         } else {
@@ -118,6 +65,7 @@ impl<T: Incrementable + Clone + Unpin> GrowOnly<T> {
 impl<T: Incrementable + Clone + Unpin> Replicative for GrowOnly<T> {
     type Op = T;
     type MergeError = IncrementError;
+    type Target = Self;
     type ApplyError = IncrementError;
     type State = Data<T>;
 

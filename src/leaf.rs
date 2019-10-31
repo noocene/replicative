@@ -40,6 +40,7 @@ impl Display for MergeError {
 
 impl<T: Clone> Replicative for Leaf<T> {
     type Op = Void;
+    type Target = Self;
     type MergeError = MergeError;
     type ApplyError = Void;
     type State = T;

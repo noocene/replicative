@@ -27,6 +27,7 @@ where
     <T as Set>::Item: Clone + Unpin,
 {
     type Op = <T as Set>::Item;
+    type Target = Self;
     type State = T;
     type ApplyError = Void;
     type MergeError = Void;

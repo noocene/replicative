@@ -41,10 +41,11 @@ pub trait Replicative: Sized + Stream<Item = <Self as Replicative>::Op> {
     type Op;
     type State;
     type MergeError: Fail;
+    type Target: Replicative;
     type ApplyError: Fail;
 
     fn apply(&mut self, origin: Actor, op: Self::Op) -> Result<(), Self::ApplyError>;
-    fn prepare<H: Handle<Self> + 'static>(&mut self, handle: H);
+    fn prepare<H: Handle<Self::Target> + 'static>(&mut self, handle: H);
     fn new(state: Self::State) -> Result<Self, Self::MergeError>;
     fn merge(&mut self, state: Self::State) -> Result<(), Self::MergeError>;
     fn fetch(&self) -> Self::State;
