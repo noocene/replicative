@@ -15,7 +15,7 @@ use crate::{
 
 pub struct GrowOnly<T: Set + Clone + Unpin>
 where
-    <T as Set>::Item: Replicative + Clone + Unpin,
+    <T as Set>::Item: Clone + Unpin,
 {
     data: T,
     handle: Sequence<Self>,
@@ -24,7 +24,7 @@ where
 impl<T: Set> Replicative for GrowOnly<T>
 where
     T: Clone + Unpin,
-    <T as Set>::Item: Replicative + Clone + Unpin,
+    <T as Set>::Item: Clone + Unpin,
 {
     type Op = <T as Set>::Item;
     type State = T;
@@ -54,7 +54,7 @@ where
 
 impl<T: Set + Clone + Unpin> GrowOnly<T>
 where
-    <T as Set>::Item: Replicative + Clone + Unpin,
+    <T as Set>::Item: Clone + Unpin,
 {
     pub fn new() -> Self {
         GrowOnly {
@@ -73,7 +73,7 @@ where
 
 impl<T: Set + Clone + Unpin> Deref for GrowOnly<T>
 where
-    <T as Set>::Item: Replicative + Clone + Unpin,
+    <T as Set>::Item: Clone + Unpin,
 {
     type Target = T;
 
@@ -84,7 +84,7 @@ where
 
 impl<T: Set + Clone + Unpin> Stream for GrowOnly<T>
 where
-    <T as Set>::Item: Replicative + Clone + Unpin,
+    <T as Set>::Item: Clone + Unpin,
     Self: Unpin,
 {
     type Item = <Self as Replicative>::Op;
