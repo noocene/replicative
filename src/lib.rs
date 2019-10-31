@@ -6,21 +6,20 @@ use std::{
     fmt::Debug,
     marker::PhantomData,
     pin::Pin,
-    sync::{Arc, Mutex},
     collections::HashMap,
     task::{Context, Poll},
 };
 
 use futures::{
-    channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
+    channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender,SendError},
     executor::ThreadPool,
-    SinkExt, Stream, Sink
+    SinkExt, Stream, Sink,StreamExt
 };
 
 pub struct Replicant<R: Replicative> {
     data: PhantomData<R>,
     last: Reference,
-    in_actions: Arc<Mutex<HashMap<Reference, Pin<Box<dyn Sink<Action, Error = ()> + Send>>>>>,
+    in_actions: HashMap<Reference, Pin<Box<UnboundedSender<Action>>>>,
     out_actions: (Pin<Box<UnboundedReceiver<Action>>>, UnboundedSender<Action>),
 }
 
@@ -55,11 +54,20 @@ pub struct Action {
     data: Box<dyn Any + Send>,
 }
 
-impl<R: Replicative> Replicant<R> {
+impl<R: Replicative + Send + 'static> Replicant<R> {
     pub fn new(data: &'_ mut R, actor: u32) -> Self {
         let (sender, receiver) = unbounded();
+        let (isender, mut ireceiver): (_, UnboundedReceiver<Action>) = unbounded();
+        let mut r = data.clone();
+        ThreadPool::new().unwrap().spawn_ok(async move {
+            while let Some(item) = ireceiver.next().await {
+                r.apply(*item.data.downcast().unwrap());
+            }
+        });
         let this = Actor::new(actor);
+        let mut in_actions = HashMap::new();
         let reference = Reference::new(this);
+        in_actions.insert(reference.clone(), Box::pin(isender));
         data.prepare(
             this,
             Handle {
@@ -72,7 +80,7 @@ impl<R: Replicative> Replicant<R> {
             data: PhantomData,
             out_actions: (Box::pin(receiver), sender),
             last: reference,
-            in_actions: Arc::new(Mutex::new(HashMap::new()))
+            in_actions
         }
     }
 }
@@ -86,20 +94,18 @@ impl<R: Replicative + Unpin> Stream for Replicant<R> {
 }
 
 impl<R: Replicative + Unpin> Sink<Action> for Replicant<R> {
-    type Error = ();
+    type Error = SendError;
 
-    fn start_send(self: Pin<&mut Self>, item: Action) -> Result<(), Self::Error> {
-        if let Some(channel) = self.in_actions.lock().unwrap().get_mut(&item.target) {
+    fn start_send(mut self: Pin<&mut Self>, item: Action) -> Result<(), Self::Error> {
+        if let Some(channel) = self.in_actions.get_mut(&item.target) {
             channel.as_mut().start_send(item)
         } else {
-            Err(())
+            panic!("no channel")
         }
     }
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         if let Some(result) = self
             .in_actions
-            .lock()
-            .unwrap()
             .values_mut()
             .map(|item| item.as_mut().poll_ready(cx))
             .find(|poll| match poll {
@@ -112,11 +118,9 @@ impl<R: Replicative + Unpin> Sink<Action> for Replicant<R> {
             Poll::Ready(Ok(()))
         }
     }
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         if let Some(result) = self
             .in_actions
-            .lock()
-            .unwrap()
             .values_mut()
             .map(|item| item.as_mut().poll_flush(cx))
             .find(|poll| match poll {
@@ -129,11 +133,9 @@ impl<R: Replicative + Unpin> Sink<Action> for Replicant<R> {
             Poll::Ready(Ok(()))
         }
     }
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         if let Some(result) = self
             .in_actions
-            .lock()
-            .unwrap()
             .values_mut()
             .map(|item| item.as_mut().poll_close(cx))
             .find(|poll| match poll {
