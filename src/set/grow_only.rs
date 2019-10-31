@@ -2,17 +2,14 @@ use futures::{
     task::{Context, Poll},
     Stream,
 };
-use std::{
-    fmt::{self, Debug, Formatter},
-    ops::Deref,
-    pin::Pin,
-};
+use std::{ops::Deref, pin::Pin};
 use void::Void;
 
 use super::Set;
 
 use crate::{
     cache::{Cache, Sequence},
+    clock::Actor,
     Handle, Replicative,
 };
 
@@ -24,19 +21,6 @@ where
     handle: Sequence<Self>,
 }
 
-impl<T: Set + Clone + Unpin + Debug> Debug for GrowOnly<T>
-where
-    <T as Set>::Item: Replicative + Clone + Unpin + Debug,
-{
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "GrowOnly {{ data: {:?}, handle: {:?} }}",
-            self.data, self.handle
-        )
-    }
-}
-
 impl<T: Set> Replicative for GrowOnly<T>
 where
     T: Clone + Unpin,
@@ -44,14 +28,16 @@ where
 {
     type Op = <T as Set>::Item;
     type State = T;
+    type ApplyError = Void;
     type MergeError = Void;
 
     fn merge(&mut self, state: Self::State) -> Result<(), Self::MergeError> {
         self.data.extend(state);
         Ok(())
     }
-    fn apply(&mut self, op: Self::Op) {
+    fn apply(&mut self, _: Actor, op: Self::Op) -> Result<(), Self::ApplyError> {
         self.data.insert(op);
+        Ok(())
     }
     fn prepare<H: Handle<Self> + 'static>(&mut self, handle: H) {
         self.handle.prepare(handle)
@@ -101,7 +87,7 @@ where
     <T as Set>::Item: Replicative + Clone + Unpin,
     Self: Unpin,
 {
-    type Item = <T as Set>::Item;
+    type Item = <Self as Replicative>::Op;
 
     fn poll_next(mut self: Pin<&mut Self>, _: &mut Context) -> Poll<Option<Self::Item>> {
         Poll::Ready(self.handle.next_cached())

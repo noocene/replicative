@@ -1,25 +1,10 @@
 use crate::{Handle, Replicative};
 
-#[derive(Debug)]
+use super::Cache;
+
 pub enum Sequence<T: Replicative> {
     Cache(Vec<T::Op>),
     Handle(Box<dyn Handle<T>>),
-}
-
-pub trait Cache<T: Replicative> {
-    fn prepare<H: Handle<T> + 'static>(&mut self, handle: H);
-    fn dispatch(&mut self, op: T::Op);
-    fn next_cached(&mut self) -> Option<T::Op>;
-}
-
-impl<T: Replicative> Sequence<T>
-where
-    T::Op: Clone,
-{
-    pub fn new() -> Self {
-        use Sequence::Cache;
-        Cache(vec![])
-    }
 }
 
 impl<T: Replicative> Cache<T> for Sequence<T>
@@ -48,5 +33,15 @@ where
             return items.pop();
         }
         None
+    }
+}
+
+impl<T: Replicative> Sequence<T>
+where
+    T::Op: Clone,
+{
+    pub fn new() -> Self {
+        use Sequence::Cache;
+        Cache(vec![])
     }
 }

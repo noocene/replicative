@@ -10,7 +10,7 @@ use std::{
 };
 use void::Void;
 
-use crate::{Handle, Replicative};
+use crate::{clock::Actor, Handle, Replicative};
 
 #[derive(Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct Leaf<T>(T);
@@ -41,9 +41,12 @@ impl Display for MergeError {
 impl<T: Clone> Replicative for Leaf<T> {
     type Op = Void;
     type MergeError = MergeError;
+    type ApplyError = Void;
     type State = T;
 
-    fn apply(&mut self, _: Self::Op) {}
+    fn apply(&mut self, _: Actor, _: Self::Op) -> Result<(), Self::ApplyError> {
+        Ok(())
+    }
     fn prepare<H: Handle<Self> + 'static>(&mut self, _: H) {}
     fn new(data: Self::State) -> Result<Self, Self::MergeError> {
         Ok(Leaf(data))
