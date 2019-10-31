@@ -60,9 +60,9 @@ where
         self.data.clone()
     }
     fn new(state: Self::State) -> Result<Self, Self::MergeError> {
-        let mut GrowOnly = Self::new();
-        GrowOnly.merge(state)?;
-        Ok(GrowOnly)
+        let mut grow_only = Self::new();
+        grow_only.merge(state)?;
+        Ok(grow_only)
     }
 }
 
